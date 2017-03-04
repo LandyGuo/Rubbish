@@ -22,18 +22,19 @@ using namespace cv;
 
 
 #define STATES 4
-#define TRAIN_IMAGE_WIDTH 536  
-#define TRAIN_IMAGE_HEIGHT 188
+#define TRAIN_IMAGE_WIDTH 192  
+#define TRAIN_IMAGE_HEIGHT 64
 #define SIFT_KEY_POINTS 40
 #define SIFT_DESCRIPTOR_DIMS 128
 #define SIFT_FEATURE_DIMS SIFT_KEY_POINTS*SIFT_DESCRIPTOR_DIMS
 
 /*Recognize Result*/
+//{'bk': 0, 'qh' : 1, 'qk' : 2, 'xh' : 3}
 typedef enum SwitchState
 {
-	STATE_FULLY_OPEN,
-	STATE_FULLY_CLOSED,
 	STATE_HALF_OPEN,
+	STATE_FULLY_CLOSED,
+	STATE_FULLY_OPEN,
 	STATE_NEARLY_CLOSED,
 }SwitchState;
 
@@ -42,7 +43,7 @@ typedef enum SwitchState
 class FeatureExtractor
 {
 public:
-	virtual vector<float> extract(Mat const & image) const = 0;
+	virtual vector<int> extract(Mat const & image) const = 0;
 };
 
 class SiftFeatureExtractor : public FeatureExtractor
@@ -55,22 +56,24 @@ public:
 		sift(expectKeyPoints),
 		expectKeyPoints(expectKeyPoints){};
 
-	vector<float> extract(Mat const & image) const override
+	vector<int> extract(Mat const & image) const override
 	{
 		vector<KeyPoint> keypoints;
 		Mat descriptors;
-		vector<float> feature(expectKeyPoints*SIFT_DESCRIPTOR_DIMS,0.0);
+		vector<int> vec;
 		sift(image, Mat(), keypoints, descriptors, false);
 		for (int i = 0; i < descriptors.rows; i++)
 		{
 			for (int j = 0; j < SIFT_DESCRIPTOR_DIMS; j++)
 			{
-				float val = descriptors.at<float>(i, j);
-				feature[i*descriptors.rows+j] = val;
+				int val = (int)descriptors.at<float>(i, j);
+				vec.push_back(val);
 				//cout << val << "\t";
 			}
 		}
-		return feature;
+		while (vec.size() < SIFT_FEATURE_DIMS)
+			vec.push_back(0);
+		return vec;
 	}
 };
 
@@ -80,18 +83,19 @@ class Predicator
 {
 public:
 	virtual SwitchState predict(Mat const &feature) const = 0;
-	virtual SwitchState predict(vector<float> const & feature) const = 0;
+	virtual SwitchState predict(vector<int> const & feature) const = 0;
 };
 
 class SvmPredicator : public Predicator
 {
-private: 
+private:
 	string svmPath;//svmPath: path to save trained SVMs
 	int featureDim;//Size: feature size for SVM predict 
 	CvSVM SVM;
-public:	
+public:
 	SvmPredicator(string svmPath, int featureDim) :svmPath(svmPath), featureDim(featureDim){
-		SVM.load(svmPath.c_str());}//loadSVM
+		SVM.load(svmPath.c_str());
+	}//loadSVM
 
 	SwitchState predict(Mat const & feature) const override
 	{
@@ -101,27 +105,25 @@ public:
 		return SwitchState(predictLabel);
 	}
 
-	SwitchState predict(vector<float> const & feature)const override
+	SwitchState predict(vector<int> const & feature)const override
 	{
-	/*	vector<float> vec(feature.begin(),feature.end());*/
-		Mat sampleMat = Mat(feature).reshape(1, 1);
-		//Mat sampleMat(1, SIFT_FEATURE_DIMS, CV_32F, cv::Scalar::all(0.0));
-		//for (int j = 0; j < SIFT_FEATURE_DIMS; j++)
-		//{
-		//	sampleMat.at<float>(j) = feature[j];
-		//}
+		Mat sampleMat(1, SIFT_FEATURE_DIMS, CV_32F, cv::Scalar::all(0.0));
+		for (int j = 0; j < SIFT_FEATURE_DIMS; j++)
+		{
+			sampleMat.at<float>(j) = feature[j];
+		}
 		return this->predict(sampleMat);
 	}
 };
 
 
 class MultiStateRecognizer
-{ 
+{
 private:
 	Predicator const & predicator;
 	FeatureExtractor const & extractor;// Patch Size for recognize
 public:
-	MultiStateRecognizer(Predicator & predicator, FeatureExtractor& extractor) 
+	MultiStateRecognizer(Predicator & predicator, FeatureExtractor& extractor)
 		:predicator(predicator), extractor(extractor){}
 
 	SwitchState recognize(Mat const & imgPatch) const//recognize one patch
@@ -132,11 +134,13 @@ public:
 			cvtColor(imgPatch, grayMat, CV_BGR2GRAY);
 		else
 			grayMat = imgPatch;
+		//imshow("test", grayMat);
+		//waitKey();
 		//resize current Mat to fit SVM
-		Mat resizedMat(TRAIN_IMAGE_HEIGHT, TRAIN_IMAGE_WIDTH,CV_8UC1, Scalar::all(0));
+		Mat resizedMat(TRAIN_IMAGE_HEIGHT, TRAIN_IMAGE_WIDTH, CV_8UC1, Scalar::all(0));
 		resize(grayMat, resizedMat, resizedMat.size(), 0, 0, CV_INTER_AREA);
 		//extract feature
-		vector<float> feature = this->extractor.extract(resizedMat);
+		vector<int> feature = this->extractor.extract(resizedMat);
 		return this->predicator.predict(feature);
 	}
 
@@ -174,17 +178,62 @@ public:
 
 };
 
+/************************************************************************/
+/* Utils: load indexFile                                         */
+/************************************************************************/
+
+vector<string> loadIndexFile(string indexFilePath)
+{
+	ifstream fs(indexFilePath);
+	vector<string> result;
+	if (fs.fail())
+	{
+		cout << "ERROR: can not open file!" << endl;
+		exit(-1);
+	}
+	string line;//line-format:S005 001 3 3
+	int lineNum = 0;
+	while (getline(fs, line))
+	{
+		//if (lineNum >= 500)
+		//{
+		//	break;
+		//}
+		result.push_back(line);
+		lineNum++;
+	}
+	return result;
+}
+
 
 
 int main()
 {
-	Predicator& pd = SvmPredicator(string("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\cookeddata\\SVMs\\Sift_SVM_1v8.xml"),
-					SIFT_FEATURE_DIMS);
+
+	Predicator& pd = SvmPredicator(string("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\task\\cookeddata-0304\\cookeddata\\SVMs\\SVM.xml"),
+		SIFT_FEATURE_DIMS);
 	FeatureExtractor & fe = SiftFeatureExtractor(SIFT_KEY_POINTS);
 	MultiStateRecognizer sr = MultiStateRecognizer(pd, fe);
 	//image
-	Mat M = imread("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\cookeddata\\rp\\tr\\30_33_0002792_0_00.jpeg");
-	SwitchState state = sr.recognize(M);
-	cout << state << endl;
+	vector<string> indexFile = loadIndexFile("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\task\\cookeddata-0304\\cookeddata\\rp5\\tr.txt");
+	string base = "C:\\Users\\guoqingpei\\Desktop\\newjingtai\\task\\cookeddata-0304\\cookeddata\\";
+	//output precision to text-file
+	ofstream outfile("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\task\\cookeddata-0304\\cookeddata\\Results\\testRecg.txt", ofstream::out);
+	for (string const & img : indexFile)
+	{
+		stringstream s(img);
+		string imgPath;
+		int label;
+		s >> imgPath >> label;
+		Mat M = imread(base + imgPath, 0);
+		SwitchState state = sr.recognize(M);
+		cout << imgPath << "\t"
+			<< label << "\t"
+			<< state << endl;
+	}
+
+	//Mat M = imread("C:\\Users\\guoqingpei\\Desktop\\newjingtai\\task\\cookeddata-0304\\cookeddata\\rp4/tr/30_33_0002672_0_01.jpeg");
+
 	system("pause");
+	return 0;
 }
