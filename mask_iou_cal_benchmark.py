@@ -51,6 +51,8 @@ def coco_calmask_rle(rec1, rec2):
 ################### use poly mask
 # mask saved in poly, use this format online
 def coco_calmask_poly(rec1, rec2):
+    # cocomask.frPyObjects will consider 4 points as [x1,y1,w,h] bbox, not polygon mask 
+    if len(poly1) <= 4 or len(poly2) <= 4: return 0.
     # 获取坐标(x,y), 不包含顶点
     poly1 = np.array([0., 0, 25., 0, 25, 25,  0, 25], dtype=np.float32)
     poly2 = np.array([0,  0, 50., 0, 50, 25,  0, 25], dtype=np.float32)
