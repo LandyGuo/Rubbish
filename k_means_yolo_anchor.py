@@ -12,6 +12,17 @@ class Box():
         self.h = h
 
 
+        
+def avg_iou(x, centroids):
+    n, d = x.shape
+    sums = 0.
+    for i in range(x.shape[0]):
+        # note IOU() will return array which contains IoU for each centroid and X[i]
+        # slightly ineffective, but I am too lazy
+        sums += max(iou(x[i], centroids))
+    return sums / n
+        
+        
 # 计算两个box在某个轴上的重叠部分
 # x1是box1的中心在该轴上的坐标
 # len1是box1在该轴上的长度
