@@ -1,11 +1,10 @@
 # coding=utf-8
-
 import cv2
 import numpy as np
 import os
 import os.path as osp
 
-from PIL import ImageFont
+from PIL import ImageFont, Image, ImageDraw
 dirname = os.path.dirname(__file__)
 Font = ImageFont.truetype(os.path.join(dirname, 'huawenfangsong.ttf'), 20)
 
@@ -31,6 +30,13 @@ def order_points(pts):
     return [tl.tolist(), tr.tolist(), br.tolist(), bl.tolist()]
 
 
+def cv2ImgAddText(img, text, left, top, textColor=(0, 255, 0), textSize=20):
+    if (isinstance(img, np.ndarray)):  #判断是否OpenCV图片类型
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img)
+    draw.text((left, top), text, textColor, font=Font)
+    return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+
 
 class Vistool(object):
 
@@ -48,7 +54,7 @@ class Vistool(object):
                 os.makedirs(savedir)
         cv2.imwrite(savepath, self._canvas)
 
-    def draw(self, coords, color=[255, 0, 0], prefix='', canvas=None):
+    def draw(self, coords, color=[255, 0, 0], prefix=None, canvas=None):
         if coords.shape[0]==0:
             return self._canvas
         if coords.shape[1]==8:
@@ -81,11 +87,11 @@ class Vistool(object):
             coords = np.array([order_points(coords[i]) for i in range(num)])
         vex_coords = np.reshape(coords, [num, -1, 2]).astype(np.int32)
         for i in range(num):
-            cv2.polylines(image_np, [vex_coords[i]], 3, color=color, lineType=20)
+            cv2.polylines(image_np, [vex_coords[i]], True, color=color, thickness=2, lineType=30)
+        if prefix is None: return image_np
         for i in range(num):
             loc = tuple(vex_coords[i][0])
-            cv2.putText(image_np, prefix+' %.2f'%confs[i], loc,
-                        cv2.FONT_ITALIC, 0.5, color, 1)
+            image_np = cv2ImgAddText(image_np, prefix[i], loc[0], loc[1]-20, (0,0,255), 1)
         return image_np
 
 
@@ -175,14 +181,15 @@ DETECTRON_PALETTE = np.array(
 ).astype(np.float32).reshape(-1, 3) * 255
 
 
-def draw(image_path, box_list, save_path, extra_info=[]):
+def draw(image_path, box_list):
     vt = Vistool(image_path)
     sources = list(set([getattr(box, 'source', '') for box in box_list]))
     colors = [hash(s)%DETECTRON_PALETTE.shape[0] for s in sources]
     for i,source in enumerate(sources):
         source_box_list = list(filter(lambda x: getattr(x, 'source', '')==source, box_list))
         coord = np.array([b.bndbox for b in source_box_list], dtype=np.float32) # nx8
-        scores = np.array([b.label_score for b in source_box_list], dtype=np.float32) # n
+        scores = np.array([getattr(b,'label_score',1.0) for b in source_box_list], dtype=np.float32) # n
         coords = np.concatenate([coord, np.expand_dims(scores, -1)], axis=1)
-        vt.draw(coords, color=DETECTRON_PALETTE[colors[i]].astype(np.int32).tolist(), prefix=source )
-    vt.save(save_path)
+        display_info = [b.text for b in source_box_list]
+        vt.draw(coords, color=DETECTRON_PALETTE[0].astype(np.int32).tolist(), prefix=display_info )
+    return vt._canvas
