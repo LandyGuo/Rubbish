@@ -93,7 +93,7 @@ def get_xhb_classify_result(filename, ip, port=10000, service_name='test'):
 image_dir = 'test'
 save_dir = 'res'
 saver = Saver(save_dir)
-tasks = TaskManager(image_dir)
+tasks = TaskManager(image_dir).create_split_tasks()
 
 threads = [RequestThread(saver, get_xhb_classify_result, subtask) for subtask in tasks]
 for t in threads:
