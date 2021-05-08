@@ -21,7 +21,7 @@ class MakeCOCODataset(object):
         self.dataset['info'] = {"year" : 2021,
                      "version" : 'v1.0',
                      "description" : kwargs.get('description', 'temporary dataset'),
-                     "contributor" : 'mujian',
+                     "contributor" : 'tester',
                      "url" : 'None',
                      "date_created" : datetime.date.isoformat(datetime.date.today())}
         self.dataset['license'] = {'id': 1234567,
@@ -113,7 +113,7 @@ class MakeCOCODataset(object):
         logging.info('building image and category index...')
         # build indexes for image and category
         self.set_images(images_list)
-        # ['BG', 'name', 'id', 'date', 'money_lower', 'money_upper', 'title', 'tc_money', 'hospital']
+        # ['BG', 'class1', 'class2', 'class3']
         self.set_categories(cates_list)
 
         def process_annotations(annotations):
